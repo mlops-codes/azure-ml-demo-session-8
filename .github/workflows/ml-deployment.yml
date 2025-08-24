@@ -1,0 +1,163 @@
+name: Azure ML Model Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_name:
+        description: "Azure ML model name to deploy"
+        required: true
+        type: string
+      model_version:
+        description: "Model version (leave empty for latest)"
+        required: false
+        type: string
+      endpoint_name:
+        description: "Endpoint name (will create/update)"
+        required: true
+        type: string
+      action:
+        description: "Action to perform"
+        required: true
+        default: "create"
+        type: choice
+        options:
+          - create
+          - update
+          - delete
+          - test-only
+      instance_type:
+        description: "VM instance type"
+        required: false
+        default: "Standard_DS2_v2"
+        type: choice
+        options:
+          - Standard_DS1_v2
+          - Standard_DS2_v2
+          - Standard_DS3_v2
+          - Standard_DS4_v2
+          - Standard_F2s_v2
+          - Standard_F4s_v2
+          - Standard_F8s_v2
+      initial_instance_count:
+        description: "Initial number of instances"
+        required: false
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+          - "4"
+          - "5"
+      environment:
+        description: "Target environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      deployment_percentage:
+        description: "Traffic percentage for blue/green deployment"
+        required: false
+        default: "100"
+        type: choice
+        options:
+          - "10"
+          - "25"
+          - "50"
+          - "75"
+          - "100"
+
+env:
+  AZURE_ML_WORKSPACE: ${{ secrets.AZURE_ML_WORKSPACE }}
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  PYTHON_VERSION: "3.9"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Validate & select model
+        env:
+          MODEL_NAME: ${{ inputs.model_name }}
+          MODEL_VERSION: ${{ inputs.model_version }}
+          AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ env.AZURE_RESOURCE_GROUP }}
+          AZURE_ML_WORKSPACE: ${{ env.AZURE_ML_WORKSPACE }}
+        run: python scripts/validate_and_select_model.py
+
+      - name: Execute deployment
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ env.AZURE_RESOURCE_GROUP }}
+          AZURE_ML_WORKSPACE: ${{ env.AZURE_ML_WORKSPACE }}
+          ACTION: ${{ inputs.action }}
+          ENDPOINT_NAME: ${{ inputs.endpoint_name }}
+          MODEL_NAME: ${{ inputs.model_name }}
+          MODEL_VERSION: ${{ inputs.model_version }}
+          INSTANCE_TYPE: ${{ inputs.instance_type }}
+          INITIAL_INSTANCE_COUNT: ${{ inputs.initial_instance_count }}
+          DEPLOYMENT_PERCENTAGE: ${{ inputs.deployment_percentage }}
+        run: python scripts/execute_deployment.py
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🚀 Azure ML Deployment Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action**: ${{ inputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Model**: ${{ inputs.model_name }}:${{ inputs.model_version || 'latest' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Endpoint**: ${{ inputs.endpoint_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Run Number**: ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "artifacts/deployment_result.json" ]; then
+            echo "### 🎯 Deployment Details" >> $GITHUB_STEP_SUMMARY
+            python - <<'PY' >> $GITHUB_STEP_SUMMARY
+            import json
+            r = json.load(open('artifacts/deployment_result.json'))
+            a = r.get('action', 'unknown')
+            if a == 'delete':
+                print('- **Status**: Endpoint deleted successfully')
+            elif a == 'test-only':
+                print('- **Test Result**: Endpoint test passed ✅')
+            else:
+                print(f"- **Deployment Name**: {r.get('deployment_name', '-')}")
+                print(f"- **Instance Type**: {r.get('instance_type', '-')}")
+                print(f"- **Instance Count**: {r.get('instance_count', '-')}")
+                print(f"- **Traffic Percentage**: {r.get('traffic_percentage', 100)}%")
+            PY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-${{ inputs.action }}-${{ inputs.environment }}-${{ github.run_number }}
+          path: |
+            artifacts/deployment_result.json
+            selected_model.json
+          retention-days: 90

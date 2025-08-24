@@ -1,0 +1,59 @@
+{
+  "azure_ml": {
+    "subscription_id": "your-staging-subscription-id",
+    "resource_group": "ml-staging-rg",
+    "workspace_name": "ml-staging-workspace",
+    "region": "eastus"
+  },
+  "compute": {
+    "training_compute": "cpu-cluster-staging",
+    "training_vm_size": "STANDARD_DS3_V2",
+    "inference_compute": "inference-cluster-staging", 
+    "inference_vm_size": "STANDARD_DS2_V2",
+    "min_nodes": 0,
+    "max_nodes": 3
+  },
+  "experiment": {
+    "experiment_name": "loan-approval-experiment-staging",
+    "model_name": "loan-approval-model-staging",
+    "endpoint_name": "loan-approval-endpoint-staging",
+    "deployment_name": "loan-approval-deployment-staging"
+  },
+  "feature_store": {
+    "feature_group_name": "loan-approval-features-staging",
+    "description": "Loan approval features for staging environment"
+  },
+  "data": {
+    "datastore_name": "workspaceblobstore",
+    "data_path": "loan-data-staging",
+    "train_data": "train_data.csv",
+    "test_data": "test_data.csv"
+  },
+  "model_hyperparameters": {
+    "model_type": "random_forest",
+    "n_estimators": 100,
+    "max_depth": 10,
+    "random_state": 42,
+    "test_size": 0.2
+  },
+  "deployment": {
+    "instance_count": 1,
+    "cpu_cores": 2,
+    "memory_gb": 4,
+    "auto_scale": {
+      "enabled": true,
+      "min_instances": 1,
+      "max_instances": 3,
+      "scale_up_threshold": 70,
+      "scale_down_threshold": 30
+    }
+  },
+  "pipeline_settings": {
+    "use_azure_ml": true,
+    "deploy_endpoint": true,
+    "continue_on_failure": false,
+    "enable_logging": true,
+    "log_level": "INFO"
+  },
+  "environment": "staging"
+}
